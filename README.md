@@ -1,1 +1,1 @@
-# de-daily-tasks-repo
+# De-Daily-Tasks-Repo
