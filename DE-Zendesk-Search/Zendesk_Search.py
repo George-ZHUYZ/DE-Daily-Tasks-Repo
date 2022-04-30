@@ -1,5 +1,74 @@
 import sys
 import pandas as pd
+from pandas.api.types import is_string_dtype
+from pandas.api.types import is_numeric_dtype
+from pandas.api.types import is_datetime64_ns_dtype
+import inflect
+
+
+# DB query APIs
+def print_formatted_result(result):
+    n_ordinal = inflect.engine()
+
+    if result.empty:
+        print('Search {0} for {1} with a value of {2}\nNo results found'.format(query_table, query_column,
+                                                                                query_value[1]))
+    else:
+        columns = list(result.columns)
+        for i in range(len(result)):
+            for j in range(len(columns)):
+                print('{0}: {1}\n'.format(columns[j], result.iloc[i, j]))
+            print('====== End of the %s result ======' % n_ordinal.ordinal(i + 1))
+
+
+def get_column_type(target_df, column):
+    if column in target_df.columns:
+        if is_string_dtype(target_df[column]):
+            return 'string'
+        elif is_numeric_dtype(target_df[column]):
+            return 'int'
+        elif is_datetime64_ns_dtype(target_df[column]):
+            return 'datetime'
+        else:
+            return 'unknown'
+    else:
+        return 'unknown'
+
+
+def equal_query(target_df, column, column_type, value):
+    if column_type == 'int':
+        value = int(value)
+
+    return target_df[target_df[column] == value]
+
+
+def like_query(target_df, column, value):
+    return target_df[target_df[column].str.contains(value, na=False)]
+
+
+def parse_query(input_2, input_3, input_4):
+    CONST_TABLES_DICT = {1: ['users', 'users'], 2: ['tickets', 'tickets'], 3: ['orgs', 'organizations']}
+
+    target_df = globals()['df_' + CONST_TABLES_DICT[input_2][0] + '_full']
+
+    global query_table
+    query_table = CONST_TABLES_DICT[input_2][1]
+
+    global query_column
+    query_column = input_3
+
+    global query_value
+    query_value = input_4.split('@@')
+
+    column_type = get_column_type(target_df, query_column)
+
+    if query_value[0] == 'equal':
+        return equal_query(target_df, query_column, column_type, query_value[1])
+    elif query_value[0] == 'like':
+        return like_query(target_df, query_column, query_value[1])
+    # To-DO: Add more type of query functions, and also will support multiple columns query
+
+# End: DB query APIs
 
 
 def populate_org_dict(target_df):
@@ -20,11 +89,24 @@ def generate_org_full_table(ticket_dict, user_dict):
     try:
         df_ticket_dict = pd.DataFrame(ticket_dict.items(), columns=['_id', 'tickets'])
         df_user_dict = pd.DataFrame(user_dict.items(), columns=['_id', 'users'])
+        df_orgs_tmp = df_orgs.copy(deep=True)
 
-        return pd.merge(pd.merge(df_orgs, df_ticket_dict, how='left', on='_id'), df_user_dict, how='left', on='_id')
+        return pd.merge(pd.merge(df_orgs_tmp, df_ticket_dict, how='left', on='_id'), df_user_dict, how='left', on='_id')
     except BaseException as error:
         print('An exception occurred: {}'.format(error))
         return False
+
+
+def generate_user_tkt_full_table(table_name, table_df, org_dict):
+    new_column_name = 'users' if table_name == 'tickets' else 'tickets'
+    table_df[new_column_name] = [list() for x in range(len(table_df.index))]
+
+    for i in range(len(table_df)):
+        organization_id = table_df.loc[i, 'organization_id']
+        if organization_id in org_dict:
+            table_df.at[i, new_column_name] = org_dict[organization_id].split(', ')
+
+    return table_df
 
 
 def is_to_quit(input_val):
@@ -56,6 +138,8 @@ def show_main_instructions():
     is_to_quit(input_4)
 
     # TO-DO: Grab the input 2, 3, 4 values to start search and return the results
+    query_result = parse_query(int(input_2), input_3, input_4)
+    print_formatted_result(query_result)
 
 
 def init_instructions():
@@ -92,10 +176,16 @@ if __name__ == "__main__":
     df_orgs = pd.read_json('organizations.json')
 
     org_to_tkt_dict = populate_org_dict(df_tickets)
+    df_users_full = generate_user_tkt_full_table('users', df_users.copy(deep=True), org_to_tkt_dict)
+
     org_to_user_dict = populate_org_dict(df_users)
+    df_tickets_full = generate_user_tkt_full_table('tickets', df_tickets.copy(deep=True), org_to_user_dict)
 
     df_orgs_full = generate_org_full_table(org_to_tkt_dict, org_to_user_dict)
-    # print(df_orgs_full[['_id', 'tickets', 'users']])
+
+    query_table = None
+    query_column = None
+    query_value = None
 
     print('Local DB loading completed!\n\n')
 
