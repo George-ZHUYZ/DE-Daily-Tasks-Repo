@@ -37,7 +37,10 @@ def get_column_type(target_df, column):
 
 def equal_query(target_df, column, column_type, value):
     if column_type == 'int':
-        value = int(value)
+        try:
+            value = int(value)
+        except ValueError:
+            return pd.DataFrame()
 
     return target_df[target_df[column] == value]
 
@@ -60,11 +63,18 @@ def parse_query(input_2, input_3, input_4):
     global query_value
     query_value = input_4.split('@@')
 
+    if query_column not in target_df.columns or query_value[1] == '':
+        # Return empty result if the search column is invalid or the search value is null
+        return pd.DataFrame()
+
     column_type = get_column_type(target_df, query_column)
 
     if query_value[0] == 'equal':
         return equal_query(target_df, query_column, column_type, query_value[1])
     elif query_value[0] == 'like':
+        if column_type == 'int':
+            # Return empty result if try to search int column with like values
+            return pd.DataFrame()
         return like_query(target_df, query_column, query_value[1])
     # To-DO: Add more type of query functions, and also will support multiple columns query
 
